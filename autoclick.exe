@@ -1,1 +1,307 @@
+import customtkinter as ctk
+import threading, time, os, win32api, win32con, psutil
+from pynput import keyboard, mouse
+
+# ==============================
+#        AUTO UPDATE (GITHUB)
+# ==============================
+
+import requests
+import sys
+import subprocess
+from tkinter import messagebox
+from packaging import version
+
+CURRENT_VERSION = "1.0.0"
+
+GITHUB_VERSION_URL = "https://raw.githubusercontent.com/TUUSUARIO/TUREPO/main/version.txt"
+GITHUB_EXE_URL = "https://raw.githubusercontent.com/TUUSUARIO/TUREPO/main/autoclick.exe"
+
+def download_update():
+    try:
+        response = requests.get(GITHUB_EXE_URL, stream=True)
+
+        with open("autoclick_new.exe", "wb") as file:
+            for chunk in response.iter_content(1024):
+                file.write(chunk)
+
+        messagebox.showinfo("Update", "New version downloaded.\nRestarting...")
+
+        subprocess.Popen("autoclick_new.exe")
+        sys.exit()
+
+    except Exception as e:
+        messagebox.showerror("Update Error", str(e))
+
+def check_for_updates():
+    try:
+        response = requests.get(GITHUB_VERSION_URL, timeout=5)
+
+        if response.status_code == 200:
+            latest_version = response.text.strip()
+
+            if version.parse(latest_version) > version.parse(CURRENT_VERSION):
+                update = messagebox.askyesno(
+                    "Update Available",
+                    f"New version {latest_version} available.\nYou have {CURRENT_VERSION}.\nUpdate now?"
+                )
+
+                if update:
+                    download_update()
+
+    except:
+        pass
+
+# ==============================
+#        CONFIGURACIÓN
+# ==============================
+
+p = psutil.Process(os.getpid())
+p.nice(psutil.HIGH_PRIORITY_CLASS)
+
+ctk.set_appearance_mode("dark")
+
+app = ctk.CTk()
+app.title("lie")
+app.geometry("430x600")
+app.resizable(False, False)
+app.configure(fg_color="#050505")
+
+# Ejecuta verificación de actualización
+check_for_updates()
+
+# ==============================
+#        AUTOCLICK CORE
+# ==============================
+
+class AutoClicker:
+    def __init__(self):
+        self.toggle_active = False
+        self.hold_active = False
+        self.ultra_mode = False
+
+        self.toggle_delay = 0.01
+        self.hold_delay = 0.01
+
+        self.toggle_key = "1"
+        self.hold_input = mouse.Button.x1
+
+        self.waiting_toggle_key = False
+        self.waiting_hold_button = False
+
+        self.key_listener = keyboard.Listener(
+            on_press=self.on_key_press,
+            on_release=self.on_key_release
+        )
+        self.key_listener.daemon = True
+        self.key_listener.start()
+
+        self.mouse_listener = mouse.Listener(
+            on_click=self.on_mouse_click
+        )
+        self.mouse_listener.daemon = True
+        self.mouse_listener.start()
+
+        threading.Thread(target=self.loop, daemon=True).start()
+
+    # ================= CLICK =================
+
+    def click(self):
+        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+
+    # ================= LOOP =================
+
+    def loop(self):
+        last_time = time.perf_counter()
+
+        while True:
+            now = time.perf_counter()
+            active = self.toggle_active or self.hold_active
+            delay = self.toggle_delay if self.toggle_active else self.hold_delay
+
+            if active:
+                if self.ultra_mode:
+                    if now - last_time >= delay:
+                        self.click()
+                        last_time = now
+                    time.sleep(0)
+                else:
+                    self.click()
+                    time.sleep(delay)
+            else:
+                time.sleep(0.0001)
+
+    # ================= KEYBOARD =================
+
+    def on_key_press(self, key):
+        try:
+            if self.waiting_toggle_key:
+                self.toggle_key = self._format_key_to_string(key)
+                toggle_key_label.configure(text=f"[KEY {self.toggle_key.upper()}]")
+                self.waiting_toggle_key = False
+                return
+
+            if self.waiting_hold_button:
+                self.hold_input = self._format_key_to_string(key)
+                hold_key_label.configure(text=f"[KEY {self.hold_input.upper()}]")
+                self.waiting_hold_button = False
+                return
+
+            if self._format_key_to_string(key) == self.toggle_key:
+                self.toggle_active = not self.toggle_active
+
+            if isinstance(self.hold_input, str):
+                if self._format_key_to_string(key) == self.hold_input:
+                    self.hold_active = True
+
+        except:
+            pass
+
+    def on_key_release(self, key):
+        try:
+            if isinstance(self.hold_input, str):
+                if self._format_key_to_string(key) == self.hold_input:
+                    self.hold_active = False
+        except:
+            pass
+
+    # ================= MOUSE =================
+
+    def on_mouse_click(self, x, y, button, pressed):
+
+        if self.waiting_hold_button and pressed:
+            self.hold_input = button
+            hold_key_label.configure(text=f"[{button.name.upper()}]")
+            self.waiting_hold_button = False
+            return
+
+        if isinstance(self.hold_input, mouse.Button):
+            if button == self.hold_input:
+                self.hold_active = pressed
+
+    # ================= UTIL =================
+
+    def _format_key_to_string(self, key):
+        if hasattr(key, "char") and key.char:
+            return key.char.lower()
+        return str(key).replace("Key.", "").lower()
+
+    def set_toggle_delay(self, value):
+        self.toggle_delay = float(value)
+
+    def set_hold_delay(self, value):
+        self.hold_delay = float(value)
+
+    def set_ultra(self, value):
+        self.ultra_mode = value
+
+
+clicker = AutoClicker()
+
+# ==============================
+#            UI
+# ==============================
+
+FONT_TITLE = ctk.CTkFont(family="Consolas", size=20, weight="bold")
+FONT_SECTION = ctk.CTkFont(family="Consolas", size=13, weight="bold")
+FONT_BODY = ctk.CTkFont(family="Consolas", size=12)
+
+container = ctk.CTkFrame(
+    app,
+    fg_color="#0f0f0f",
+    corner_radius=8,
+    border_width=1,
+    border_color="#1a1a1a"
+)
+container.pack(fill="both", expand=True, padx=20, pady=20)
+
+ctk.CTkLabel(
+    container,
+    text="kcaj lie",
+    font=FONT_TITLE,
+    text_color="#ffffff"
+).pack(pady=(20, 15))
+
+ctk.CTkFrame(container, height=1, fg_color="#1a1a1a").pack(fill="x", padx=25, pady=10)
+
+# ================= TOGGLE =================
+
+ctk.CTkLabel(container, text="TOGGLE SPEED", font=FONT_SECTION, text_color="#bbbbbb").pack(anchor="w", padx=25)
+
+toggle_key_label = ctk.CTkLabel(container, text="[KEY 1]", font=FONT_BODY, text_color="#666666")
+toggle_key_label.pack(anchor="e", padx=25)
+
+def update_toggle(value):
+    clicker.set_toggle_delay(value)
+    toggle_value.configure(text=f"{float(value):.4f}")
+
+toggle_value = ctk.CTkLabel(container, text="0.0100", font=FONT_BODY, text_color="#666666")
+toggle_value.pack(anchor="e", padx=25)
+
+toggle_slider = ctk.CTkSlider(container, from_=0.0005, to=0.05,
+                              number_of_steps=200, command=update_toggle)
+toggle_slider.set(0.01)
+toggle_slider.pack(fill="x", padx=25, pady=5)
+
+def change_toggle_key():
+    clicker.waiting_toggle_key = True
+    clicker.waiting_hold_button = False
+    toggle_key_label.configure(text="[PRESS KEY]")
+
+ctk.CTkButton(
+    container,
+    text="Change Toggle Key",
+    command=change_toggle_key,
+    fg_color="#111111",
+    hover_color="#1a1a1a"
+).pack(padx=25, pady=(5, 15))
+
+ctk.CTkFrame(container, height=1, fg_color="#1a1a1a").pack(fill="x", padx=25, pady=10)
+
+# ================= HOLD =================
+
+ctk.CTkLabel(container, text="HOLD SPEED", font=FONT_SECTION, text_color="#bbbbbb").pack(anchor="w", padx=25)
+
+hold_key_label = ctk.CTkLabel(container, text="[X1]", font=FONT_BODY, text_color="#666666")
+hold_key_label.pack(anchor="e", padx=25)
+
+def update_hold(value):
+    clicker.set_hold_delay(value)
+    hold_value.configure(text=f"{float(value):.4f}")
+
+hold_value = ctk.CTkLabel(container, text="0.0100", font=FONT_BODY, text_color="#666666")
+hold_value.pack(anchor="e", padx=25)
+
+hold_slider = ctk.CTkSlider(container, from_=0.0005, to=0.05,
+                            number_of_steps=200, command=update_hold)
+hold_slider.set(0.01)
+hold_slider.pack(fill="x", padx=25, pady=5)
+
+def change_hold_button():
+    clicker.waiting_hold_button = True
+    clicker.waiting_toggle_key = False
+    hold_key_label.configure(text="[PRESS KEY OR MOUSE]")
+
+ctk.CTkButton(
+    container,
+    text="Change Hold Button",
+    command=change_hold_button,
+    fg_color="#111111",
+    hover_color="#1a1a1a"
+).pack(padx=25, pady=(5, 15))
+
+ctk.CTkFrame(container, height=1, fg_color="#1a1a1a").pack(fill="x", padx=25, pady=10)
+
+# ================= ULTRA MODE =================
+
+def toggle_ultra():
+    clicker.set_ultra(ultra_switch.get())
+
+ultra_switch = ctk.CTkSwitch(container, text="ULTRA MODE", command=toggle_ultra)
+ultra_switch.pack(pady=20)
+
+# ==============================
+
+app.mainloop()
 
