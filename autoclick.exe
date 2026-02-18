@@ -11,7 +11,7 @@ import sys
 from tkinter import messagebox
 from packaging import version
 
-CURRENT_VERSION = "1.2.0"
+CURRENT_VERSION = "1.3.0"
 
 GITHUB_VERSION_URL = "https://raw.githubusercontent.com/shwrought/kcaj-UPD/main/version.txt"
 
